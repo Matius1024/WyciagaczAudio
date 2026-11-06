@@ -3,3 +3,4 @@ obj/
 publish/
 wydania/
 *.exe
+publish-portable/

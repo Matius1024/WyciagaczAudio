@@ -6,13 +6,16 @@ namespace WyciagaczAudio;
 
 public sealed class MainForm : Form
 {
-    const string Wersja = "1.0";
+    const string Wersja = "1.1";
 
     readonly Label lblSource = new() { Text = "Źródło (plik lub folder):", AutoSize = true };
     readonly TextBox txtSource = new() { ReadOnly = true, Dock = DockStyle.Fill, AccessibleName = "Źródło (plik lub folder)" };
     readonly Button btnFile = new() { Text = "Wybierz pl&ik...", AutoSize = true };
     readonly Button btnFolder = new() { Text = "Wybierz &folder...", AutoSize = true };
     readonly CheckBox chkRecursive = new() { Text = "Uwzględnij &podfoldery", AutoSize = true, Checked = true };
+    // widoczny tylko wtedy, gdy brakuje ffmpeg; Alt+E
+    readonly Button btnFfmpeg = new() { Text = "Pobierz ffmp&eg...", AutoSize = true, Visible = false,
+        AccessibleDescription = "Pobiera ffmpeg i ffprobe z gyan.dev (ok. 115 MB) i zapisuje w folderze programu." };
     readonly Label lblTracks = new() { Text = "Ścieżki &audio (spacja zaznacza lub odznacza):", AutoSize = true };
     readonly CheckedListBox lstTracks = new() { CheckOnClick = true, Dock = DockStyle.Fill, IntegralHeight = false, AccessibleName = "Ścieżki audio" };
     readonly Button btnPreview = new() { Text = "&Odsłuchaj próbkę podświetlonej ścieżki", AutoSize = true };
@@ -42,6 +45,7 @@ public sealed class MainForm : Form
     bool settingOut;
     CancellationTokenSource? cts;
     bool busy;
+    bool ffmpegOk;
 
     public MainForm(string? startPath)
     {
@@ -80,6 +84,11 @@ public sealed class MainForm : Form
 
         BuildLayout();
 
+        btnFfmpeg.Click += async (_, _) =>
+        {
+            await Task.Yield();
+            PobierzFfmpeg();
+        };
         btnFile.Click += (_, _) => PickFile();
         btnFolder.Click += (_, _) => PickFolder();
         chkRecursive.CheckedChanged += async (_, _) => { if (sourcePath != null && !sourceIsFile) await LoadAsync(sourcePath, false); };
@@ -108,20 +117,18 @@ public sealed class MainForm : Form
 
         Shown += async (_, _) =>
         {
-            if (!Ffmpeg.Dostepny(out var err))
-            {
-                MessageBox.Show(this,
-                    "Nie znaleziono programu ffmpeg lub ffprobe.\n\nZainstaluj go poleceniem w PowerShell:\nwinget install Gyan.FFmpeg\n\nalbo skopiuj ffmpeg.exe i ffprobe.exe do folderu tego programu.\n\nSzczegóły: " + err,
-                    Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            await Task.Yield();
             CleanPreviews();
-            if (!string.IsNullOrWhiteSpace(startPath))
+            SprawdzFfmpeg();
+            if (!ffmpegOk) ProponujPobranie();
+            if (!string.IsNullOrWhiteSpace(startPath) && ffmpegOk)
             {
                 var p = startPath.Trim('"');
                 if (File.Exists(p)) await LoadAsync(p, true);
                 else if (Directory.Exists(p)) await LoadAsync(p, false);
             }
-            else btnFolder.Focus();
+            else if (ffmpegOk) btnFolder.Focus();
+            else btnFfmpeg.Focus();
         };
     }
 
@@ -149,7 +156,7 @@ public sealed class MainForm : Form
         {
             (lblSource, SizeType.AutoSize, 0),
             (txtSource, SizeType.AutoSize, 0),
-            (Flow(btnFile, btnFolder, chkRecursive), SizeType.AutoSize, 0),
+            (Flow(btnFile, btnFolder, chkRecursive, btnFfmpeg), SizeType.AutoSize, 0),
             (lblTracks, SizeType.AutoSize, 0),
             (lstTracks, SizeType.Percent, 50),
             (Flow(btnPreview), SizeType.AutoSize, 0),
@@ -189,7 +196,7 @@ public sealed class MainForm : Form
     void SetBusy(bool b)
     {
         busy = b;
-        btnFile.Enabled = btnFolder.Enabled = chkRecursive.Enabled = !b;
+        btnFile.Enabled = btnFolder.Enabled = chkRecursive.Enabled = btnFfmpeg.Enabled = !b;
         lstTracks.Enabled = btnPreview.Enabled = cmbFormat.Enabled = !b;
         txtOut.Enabled = btnOut.Enabled = chkOverwrite.Enabled = btnStart.Enabled = !b;
         chkStereo.Enabled = !b && cmbFormat.SelectedIndex > 1;
@@ -226,10 +233,81 @@ public sealed class MainForm : Form
         outEditedByUser = false;
     }
 
+    // ---------- ffmpeg ----------
+
+    const string BrakFfmpegStatus =
+        "Brak ffmpeg – bez niego nie da się analizować ani wyciągać audio. Aby go pobrać, naciśnij Alt+E (przycisk „Pobierz ffmpeg”).";
+
+    /// <summary>Sprawdza ffmpeg i ffprobe, ustawia flagę i widoczność przycisku pobierania.</summary>
+    bool SprawdzFfmpeg()
+    {
+        ffmpegOk = Ffmpeg.Dostepny(out var err);
+        btnFfmpeg.Visible = !ffmpegOk;
+        if (!ffmpegOk) Log("Nie znaleziono działającego ffmpeg lub ffprobe: " + err);
+        return ffmpegOk;
+    }
+
+    /// <summary>Pyta o pobranie ffmpeg (Tak/Nie). Zwraca true, gdy ffmpeg jest dostępny.</summary>
+    bool ProponujPobranie()
+    {
+        var odp = MessageBox.Show(this,
+            "Do działania programu potrzebny jest ffmpeg (ffmpeg.exe i ffprobe.exe), którego nie znaleziono. " +
+            "Pobrać go teraz z gyan.dev (ok. 115 MB) i zapisać w folderze programu?",
+            Text, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+        if (odp == DialogResult.Yes) return PobierzFfmpeg();
+        Status(BrakFfmpegStatus);
+        return false;
+    }
+
+    /// <summary>Przed analizą lub wyciąganiem: gdy brak ffmpeg, sprawdza ponownie i proponuje pobranie.</summary>
+    bool UpewnijSieFfmpeg() => ffmpegOk || SprawdzFfmpeg() || ProponujPobranie();
+
+    /// <summary>Otwiera okno pobierania i pokazuje wynik. Zwraca true, gdy ffmpeg działa.</summary>
+    bool PobierzFfmpeg()
+    {
+        bool sukces, anulowano, zapasowy;
+        string blad, folder;
+        bool? suma;
+        using (var f = new PobieranieForm(Text))
+        {
+            f.ShowDialog(this);
+            (sukces, anulowano, zapasowy, blad, folder, suma) = (f.Sukces, f.Anulowano, f.UzytoZapasowego, f.Blad, f.Folder, f.SumaSprawdzona);
+        }
+        var podpowiedz =
+            "Możesz spróbować ponownie przyciskiem „Pobierz ffmpeg” (Alt+E), zainstalować ffmpeg poleceniem w PowerShell:\n" +
+            "winget install Gyan.FFmpeg\n" +
+            "albo pobrać go ręcznie z https://www.gyan.dev/ffmpeg/builds/ i wrzucić ffmpeg.exe i ffprobe.exe do folderu programu:\n" +
+            Ffmpeg.FolderProgramu;
+        if (sukces && SprawdzFfmpeg())
+        {
+            var msg = "ffmpeg został pobrany i zapisany w: " + folder +
+                      (zapasowy ? "\n\nDo folderu programu nie da się zapisywać, dlatego użyto folderu użytkownika." : "") +
+                      (suma == true ? "\n\nSuma kontrolna SHA-256 jest zgodna." : "");
+            Log(msg.Replace("\n\n", " "));
+            Status("ffmpeg jest gotowy. Wybierz plik albo folder z filmami.");
+            MessageBox.Show(this, msg, Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
+            btnFolder.Focus();
+            return true;
+        }
+        string tresc = sukces
+            ? "ffmpeg został pobrany do: " + folder + ", ale program nadal nie może go uruchomić."
+            : anulowano
+                ? "Pobieranie ffmpeg zostało anulowane. Częściowo pobrane pliki usunięto."
+                : "Nie udało się pobrać ffmpeg. Przyczyna: " + blad + ". Częściowo pobrane pliki usunięto.";
+        Log(tresc);
+        Status(BrakFfmpegStatus);
+        MessageBox.Show(this, tresc + "\n\n" + podpowiedz, Text, MessageBoxButtons.OK,
+            anulowano ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+        if (btnFfmpeg.Visible) btnFfmpeg.Focus();
+        return false;
+    }
+
     // ---------- wybór źródła ----------
 
     async void PickFile()
     {
+        await Task.Yield();
+        if (!UpewnijSieFfmpeg()) return;
         using var d = new OpenFileDialog
         {
             Title = "Wybierz plik wideo",
@@ -240,6 +318,8 @@ public sealed class MainForm : Form
 
     async void PickFolder()
     {
+        await Task.Yield();
+        if (!UpewnijSieFfmpeg()) return;
         using var d = new FolderBrowserDialog { Description = "Wybierz folder z filmami lub serialem", UseDescriptionForTitle = true };
         if (sourcePath != null) d.InitialDirectory = RootFolder;
         if (d.ShowDialog(this) == DialogResult.OK) await LoadAsync(d.SelectedPath, false);
@@ -263,6 +343,7 @@ public sealed class MainForm : Form
 
     async Task LoadAsync(string path, bool isFile)
     {
+        if (!UpewnijSieFfmpeg()) return;
         sourcePath = path;
         sourceIsFile = isFile;
         txtSource.Text = path;
@@ -401,6 +482,7 @@ public sealed class MainForm : Form
         // najpierw oddaj sterowanie pętli okna – inaczej przy aktywacji z zewnątrz (NVDA, UI Automation)
         // okno komunikatu potrafi się od razu zamknąć
         await Task.Yield();
+        if (!UpewnijSieFfmpeg()) return;
         int idx = lstTracks.SelectedIndex;
         if (idx < 0 || idx >= groups.Count)
         {
@@ -449,6 +531,7 @@ public sealed class MainForm : Form
         // najpierw oddaj sterowanie pętli okna – inaczej przy aktywacji z zewnątrz (NVDA, UI Automation)
         // okno komunikatu potrafi się od razu zamknąć
         await Task.Yield();
+        if (!UpewnijSieFfmpeg()) return;
         if (sourcePath == null || infos.Count == 0)
         {
             Status("Najpierw wybierz plik albo folder z filmami.");

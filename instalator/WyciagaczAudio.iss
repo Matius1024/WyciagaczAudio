@@ -15,9 +15,9 @@
 ;                programu (pozwala przetestować pobieranie ffmpeg na komputerze, który go ma).
 ;  /BEZNET       nigdy nie pobiera ani nie instaluje .NET, nawet gdy go brakuje.
 ; Przykład testu cichego:
-;  WyciagaczAudio-1.0-instalator.exe /VERYSILENT /SUPPRESSMSGBOXES /CURRENTUSER /WYMUSFFMPEG /BEZNET /DIR="C:\test" /LOG="C:\test.log"
+;  WyciagaczAudio-1.1-instalator.exe /VERYSILENT /SUPPRESSMSGBOXES /CURRENTUSER /WYMUSFFMPEG /BEZNET /DIR="C:\test" /LOG="C:\test.log"
 
-#define AppVer "1.0"
+#define AppVer "1.1"
 #define AppNazwa "Wyciągacz audio"
 #define DotNetUrl "https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe"
 #define FfmpegUrl "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"

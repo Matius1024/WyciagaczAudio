@@ -172,10 +172,41 @@ public static class Ffmpeg
     public static readonly string[] VideoExt =
         { ".mp4", ".m4v", ".mkv", ".mov", ".avi", ".ts", ".m2ts", ".webm", ".wmv", ".mpg", ".mpeg", ".flv" };
 
+    /// <summary>
+    /// Parametr testowy: zmienna środowiskowa WYCIAGACZ_TEST_BEZ_PATH=1 sprawia, że program szuka ffmpeg
+    /// wyłącznie w folderze programu (i w jego podfolderze „ffmpeg”), a pomija zapasowy folder
+    /// %LOCALAPPDATA%\WyciagaczAudio\ffmpeg oraz PATH. Służy do testowania pobierania ffmpeg
+    /// na komputerze, który ma już ffmpeg (np. z WinGet). W zwykłym użyciu nie jest potrzebna.
+    /// </summary>
+    public static bool TrybTestowyBezPath =>
+        Environment.GetEnvironmentVariable("WYCIAGACZ_TEST_BEZ_PATH") == "1";
+
+    /// <summary>Folder programu (przy pojedynczym pliku exe to folder, w którym leży exe).</summary>
+    public static string FolderProgramu => AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
+
+    /// <summary>Zapasowy folder na ffmpeg, gdy do folderu programu nie da się pisać.</summary>
+    public static string FolderZapasowy => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "WyciagaczAudio", "ffmpeg");
+
+    /// <summary>Foldery przeszukiwane po kolei; potem (poza trybem testowym) PATH.</summary>
+    public static IEnumerable<string> FolderyKandydaci()
+    {
+        yield return FolderProgramu;
+        yield return Path.Combine(FolderProgramu, "ffmpeg");
+        if (!TrybTestowyBezPath) yield return FolderZapasowy;
+    }
+
+    /// <summary>Folder, w którym leżą jednocześnie ffmpeg.exe i ffprobe.exe, albo null.</summary>
+    public static string? ZnajdzFolder() =>
+        FolderyKandydaci().FirstOrDefault(d =>
+            File.Exists(Path.Combine(d, "ffmpeg.exe")) && File.Exists(Path.Combine(d, "ffprobe.exe")));
+
     static string Find(string exe)
     {
-        var local = Path.Combine(AppContext.BaseDirectory, exe);
-        return File.Exists(local) ? local : exe;
+        var dir = ZnajdzFolder();
+        if (dir != null) return Path.Combine(dir, exe);
+        // w trybie testowym pełna ścieżka do (nieistniejącego) pliku, żeby system nie sięgnął do PATH
+        return TrybTestowyBezPath ? Path.Combine(FolderProgramu, exe) : exe;
     }
 
     public static string FfmpegExe => Find("ffmpeg.exe");
@@ -200,12 +231,24 @@ public static class Ffmpeg
     {
         try
         {
-            using var p = Process.Start(Psi(FfmpegExe, new[] { "-version" }))!;
-            p.StandardOutput.ReadToEnd();
-            p.WaitForExit();
-            using var q = Process.Start(Psi(FfprobeExe, new[] { "-version" }))!;
-            q.StandardOutput.ReadToEnd();
-            q.WaitForExit();
+            foreach (var exe in new[] { FfmpegExe, FfprobeExe })
+            {
+                using var p = Process.Start(Psi(exe, new[] { "-hide_banner", "-version" }))!;
+                var errTask = p.StandardError.ReadToEndAsync();
+                p.StandardOutput.ReadToEnd();
+                if (!p.WaitForExit(15000))
+                {
+                    try { p.Kill(true); } catch { }
+                    blad = $"{Path.GetFileName(exe)} nie odpowiada.";
+                    return false;
+                }
+                errTask.Wait(2000);
+                if (p.ExitCode != 0)
+                {
+                    blad = $"{Path.GetFileName(exe)} zakończył się kodem {p.ExitCode}.";
+                    return false;
+                }
+            }
             blad = "";
             return true;
         }

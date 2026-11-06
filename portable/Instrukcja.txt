@@ -1,0 +1,16 @@
+﻿Wyciągacz audio – wersja portable
+
+1. Rozpakuj ten folder gdziekolwiek, np. na pulpit, do folderu z dokumentami albo na pendrive.
+2. Uruchom plik WyciagaczAudio.exe.
+3. Przy pierwszym uruchomieniu program sprawdzi, czy ma ffmpeg. Jeśli go nie znajdzie, zapyta,
+   czy pobrać go z gyan.dev (ok. 115 MB). Po odpowiedzi Tak ffmpeg.exe i ffprobe.exe zostaną zapisane
+   w tym samym folderze co program. Pobieranie można też uruchomić później skrótem Alt+E.
+4. Wersja portable ma w sobie .NET, więc nie trzeba niczego doinstalowywać.
+   Nic nie jest instalowane w systemie i nie powstają żadne wpisy w rejestrze.
+5. Żeby usunąć program, po prostu skasuj ten folder.
+
+Gdy do folderu programu nie da się zapisywać (np. w Program Files), ffmpeg trafi do
+%LOCALAPPDATA%\WyciagaczAudio\ffmpeg – wtedy ten folder też można skasować przy usuwaniu.
+
+Opis programu i skróty klawiszowe: plik README.md (można go otworzyć w Notatniku).
+Strona projektu: https://github.com/Matius1024/WyciagaczAudio
