@@ -42,6 +42,36 @@ https://github.com/Matius1024/WyciagaczAudio/releases
 Najnowsza wersja programu (jeden plik exe):
 https://github.com/Matius1024/WyciagaczAudio/releases/latest/download/WyciagaczAudio.exe
 
+## Instalator
+
+Plik `WyciagaczAudio-1.0-instalator.exe` instaluje program razem z brakującymi komponentami.
+
+- Instaluje dla bieżącego użytkownika, bez uprawnień administratora, do folderu
+  `%LOCALAPPDATA%\Programs\Wyciągacz audio`. Na początku można wybrać instalację dla wszystkich
+  użytkowników (wtedy do `Program Files`, z uprawnieniami administratora).
+- Zawsze tworzy skrót w menu Start. Na stronie zadań można zaznaczyć:
+  - „Skrót na pulpicie” (domyślnie wyłączony),
+  - „Dodaj do menu Wyślij do” (domyślnie włączony). Wtedy „Wyślij do”, „Wyciągacz audio” na pliku lub folderze
+    (np. serialu) od razu otwiera go w programie.
+- Sprawdza, czy jest .NET 10 Desktop Runtime x64 (folder `C:\Program Files\dotnet\shared\Microsoft.WindowsDesktop.App\10.*`
+  albo wpis w rejestrze) oraz czy `ffmpeg.exe` i `ffprobe.exe` są w folderze programu lub w którymś katalogu ze zmiennej Path
+  (także Path użytkownika i systemu, więc ffmpeg z `winget install Gyan.FFmpeg` jest wykrywany).
+- Gdy czegoś brakuje, na stronie zadań pojawia się grupa „Brakujące komponenty” z zaznaczonymi polami:
+  - „Pobierz i zainstaluj .NET 10 Desktop Runtime” – pobiera z serwerów Microsoftu
+    (https://aka.ms/dotnet/10.0/windowsdesktop-runtime-win-x64.exe, ok. 60 MB) i instaluje po cichu;
+    instalator .NET sam poprosi o uprawnienia administratora,
+  - „Pobierz ffmpeg” – pobiera z gyan.dev (https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip, ok. 115 MB)
+    i kopiuje `ffmpeg.exe` oraz `ffprobe.exe` do folderu programu.
+- Strona „Gotowy do instalacji” podaje stan komponentów, np. „.NET 10 Desktop Runtime: zainstalowany”,
+  „ffmpeg: znaleziony w …”.
+- Pobieranie pokazuje pasek postępu i można je przerwać. Gdy pobieranie się nie uda, program i tak zostanie zainstalowany,
+  a komunikat podpowie, jak doinstalować brakujący komponent później.
+- Odinstalowanie: Ustawienia, Aplikacje, Zainstalowane aplikacje, „Wyciągacz audio 1.0”, Odinstaluj
+  (albo `unins000.exe` w folderze programu). Usuwa program, skróty, wpis „Wyślij do” oraz ffmpeg położony w folderze programu.
+  .NET zostaje w systemie.
+- Parametry do testów: `/WYMUSFFMPEG` traktuje ffmpeg jako brakujący, `/BEZNET` nigdy nie instaluje .NET.
+  Działa też tryb cichy, np. `/VERYSILENT /SUPPRESSMSGBOXES /CURRENTUSER`.
+
 ## Wymagania
 
 - Windows 10 lub 11, 64-bitowy (x64).
@@ -57,3 +87,15 @@ dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile
 ```
 
 Gotowy plik `WyciagaczAudio.exe` pojawi się w folderze `publish`.
+
+### Instalator
+
+Potrzebny jest Inno Setup 6.1 lub nowszy. Skopiuj zbudowany program jako `wydania\WyciagaczAudio-1.0.exe`,
+a potem w folderze projektu uruchom:
+
+```
+powershell -ExecutionPolicy Bypass -File .\zbuduj-instalator.ps1
+```
+
+Skrypt instalatora to `instalator\WyciagaczAudio.iss` (wersja w linii `#define AppVer`).
+Wynik: `wydania\WyciagaczAudio-1.0-instalator.exe`.
