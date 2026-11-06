@@ -39,7 +39,10 @@ https://github.com/Matius1024/WyciagaczAudio/releases
 
 ## Pobieranie
 
-Najnowsza wersja programu (jeden plik exe):
+Zalecany sposób: instalator, który sam doinstaluje brakujące .NET 10 i ffmpeg:
+https://github.com/Matius1024/WyciagaczAudio/releases/latest/download/WyciagaczAudio-instalator.exe
+
+Sam program (jeden plik exe, dla osób, które mają już .NET 10 i ffmpeg):
 https://github.com/Matius1024/WyciagaczAudio/releases/latest/download/WyciagaczAudio.exe
 
 ## Instalator
